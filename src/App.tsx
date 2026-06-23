@@ -109,13 +109,32 @@ function LandingPage() {
 }
 
 function AppContent() {
-  const { user, loading, isConfigured } = useAuth()
+  const { user, loading, isConfigured, authError } = useAuth()
 
   if (!isConfigured) return <SetupGuide />
 
   if (loading) return <LoadingScreen />
 
-  if (!user) return <LandingPage />
+  // If we have a user (even a fallback from session), proceed normally
+  // The Onboarding flow will detect existing repos and handle them
+  if (!user) {
+    // Only show error if there's no session at all
+    if (authError) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-background p-4">
+          <div className="text-center max-w-md space-y-4">
+            <h2 className="text-lg font-semibold">会话已过期</h2>
+            <p className="text-sm text-muted-foreground">{authError}</p>
+            <Button onClick={handleLogin} className="gap-2">
+              <Github className="h-4 w-4" />
+              重新登录
+            </Button>
+          </div>
+        </div>
+      )
+    }
+    return <LandingPage />
+  }
 
   return <EditorPage />
 }

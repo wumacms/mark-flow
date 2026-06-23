@@ -273,8 +273,20 @@ export default function EditorPage() {
 
       const pageUrl = `https://${user.github_username}.github.io/${user.repo_name}/${docDir}/`
       toast.success('发布成功！', {
-        description: `访问地址: ${pageUrl}`,
-        duration: 8000,
+        description: (
+          <div className="mt-1">
+            <p className="text-xs text-muted-foreground">访问地址：</p>
+            <a
+              href={pageUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-primary hover:underline break-all"
+            >
+              {pageUrl}
+            </a>
+          </div>
+        ) as any,
+        duration: 10000,
       })
     } catch (err: any) {
       toast.error('发布失败: ' + err.message)
@@ -296,8 +308,11 @@ export default function EditorPage() {
     let html = md
 
     // Code blocks (process first to avoid interference)
+    // IMPORTANT: Do NOT add 'hljs' class — highlight.js adds it automatically.
+    // If we add it here, highlight.js will skip these elements thinking they're already highlighted.
     html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_m, lang, code) => {
-      return `<pre><code class="hljs language-${lang}">${escapeHtml(code.trim())}</code></pre>`
+      const langClass = lang ? ` language-${lang}` : ''
+      return `<pre><code class="${langClass}">${escapeHtml(code.trim())}</code></pre>`
     })
 
     // Inline code

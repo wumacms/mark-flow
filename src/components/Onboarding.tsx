@@ -11,7 +11,14 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { signInWithGitHub } from '@/lib/supabase'
-import { createRepository, enableGitHubPages } from '@/lib/github'
+import {
+  createRepository,
+  enableGitHubPages,
+  createOrUpdateFile,
+  getFile,
+  getFileWithRetry,
+  checkRepoExists,
+} from '@/lib/github'
 import { updateUserProfile } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { toast } from 'sonner'
@@ -29,14 +36,13 @@ export function Onboarding({ onComplete }: OnboardingProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [pagesUrl, setPagesUrl] = useState('')
+  const [initProgress, setInitProgress] = useState('')
 
   const handleGitHubLogin = async () => {
     const { error: loginError } = await signInWithGitHub()
     if (loginError) {
       toast.error('GitHub 登录失败: ' + loginError.message)
     }
-    // After OAuth redirect, the auth context will update automatically
-    // and the component will re-render with the user data
   }
 
   // Watch for user changes after OAuth redirect
@@ -63,26 +69,87 @@ export function Onboarding({ onComplete }: OnboardingProps) {
     try {
       const githubUsername = user.github_username
 
-      // Create repository
-      const repo = await createRepository(user.github_token, repoName, 'My Markdown Documents')
+      // Step 1: Check if repo already exists
+      setInitProgress('检查仓库是否存在...')
+      const existingRepo = await checkRepoExists(user.github_token, githubUsername, repoName)
 
-      // Enable GitHub Pages
+      let isNewRepo = false
+      if (existingRepo) {
+        setInitProgress(`仓库 "${repoName}" 已存在，将使用现有仓库...`)
+        await new Promise(r => setTimeout(r, 800))
+      } else {
+        // Step 2: Create repository WITHOUT auto_init
+        setInitProgress('正在创建 GitHub 仓库...')
+        await createRepository(user.github_token, repoName, 'My Markdown Documents', false)
+        isNewRepo = true
+        // Wait for repo to be ready on GitHub side
+        await new Promise(r => setTimeout(r, 2000))
+
+        // Step 3: Create README.md FIRST to initialize the repo with a commit and main branch
+        // This MUST happen before enabling GitHub Pages, otherwise we get 409 "Git Repository is empty"
+        setInitProgress('正在初始化仓库内容...')
+        const readmeContent = '# My Documents\n\nThis repository stores my markdown documents managed by MarkFlow.'
+
+        // Retry creating README in case repo isn't ready yet
+        let readmeCreated = false
+        for (let attempt = 0; attempt < 5; attempt++) {
+          try {
+            await createOrUpdateFile(
+              user.github_token,
+              githubUsername,
+              repoName,
+              'README.md',
+              readmeContent,
+              'docs: init repository',
+              undefined,
+              'main'
+            )
+            readmeCreated = true
+            break
+          } catch (retryErr: any) {
+            if (attempt < 4) {
+              await new Promise(r => setTimeout(r, 2000))
+            } else {
+              throw retryErr
+            }
+          }
+        }
+        if (!readmeCreated) {
+          throw new Error('无法创建 README 文件')
+        }
+        // Wait for the commit to propagate so the main branch exists
+        await new Promise(r => setTimeout(r, 2000))
+      }
+
+      // Step 4: Enable GitHub Pages (repo now has a main branch)
+      setInitProgress('正在配置 GitHub Pages...')
       await enableGitHubPages(user.github_token, githubUsername, repoName)
+      await new Promise(r => setTimeout(r, 1000))
 
-      // Create initial README
-      const { createOrUpdateFile } = await import('@/lib/github')
-      await createOrUpdateFile(
-        user.github_token,
-        githubUsername,
-        repoName,
-        'README.md',
-        '# My Documents\n\nThis repository stores my markdown documents.',
-        'docs: init repository',
-        undefined,
-        'main'
-      )
+      // Step 5: For existing repos, update README if needed
+      if (!isNewRepo) {
+        setInitProgress('更新仓库内容...')
+        const existingReadme = await getFileWithRetry(
+          user.github_token,
+          githubUsername,
+          repoName,
+          'README.md',
+          'main'
+        )
+        await createOrUpdateFile(
+          user.github_token,
+          githubUsername,
+          repoName,
+          'README.md',
+          '# My Documents\n\nThis repository stores my markdown documents managed by MarkFlow.',
+          'docs: update README',
+          existingReadme.sha,
+          'main'
+        )
+      }
 
-      // Update user profile
+      // Step 6: Update user profile
+      setInitProgress('保存配置...')
       await updateUserProfile(user.id, {
         repo_name: repoName,
         repo_initialized: true,
@@ -91,13 +158,23 @@ export function Onboarding({ onComplete }: OnboardingProps) {
       setPagesUrl(`https://${githubUsername}.github.io/${repoName}/`)
       await refreshUser()
       setStep('complete')
-      toast.success('仓库创建成功！')
+      toast.success('仓库设置完成！')
     } catch (err: any) {
-      setError(err.message || '创建仓库失败')
+      const message = err.message || '创建仓库失败'
+      if (message.includes('already exists') && message.includes('Repository')) {
+        setError(`仓库 "${repoName}" 已存在，请换一个名称`)
+      } else if (message.includes('sha') || message.includes('SHA')) {
+        setError('文件更新冲突，请刷新页面重试')
+      } else if (message.includes('empty')) {
+        setError('仓库为空，初始化失败，请刷新页面重试')
+      } else {
+        setError(message)
+      }
       setStep('create-repo')
-      toast.error('创建仓库失败: ' + (err.message || '未知错误'))
+      toast.error('创建仓库失败: ' + message)
     } finally {
       setLoading(false)
+      setInitProgress('')
     }
   }
 
@@ -161,9 +238,9 @@ export function Onboarding({ onComplete }: OnboardingProps) {
               </p>
             </div>
             {error && (
-              <div className="flex items-center gap-2 text-sm text-destructive">
-                <AlertCircle className="h-4 w-4" />
-                {error}
+              <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/5 rounded-lg p-2.5">
+                <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                <span>{error}</span>
               </div>
             )}
             <div className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground space-y-1">
@@ -199,8 +276,26 @@ export function Onboarding({ onComplete }: OnboardingProps) {
             <Loader2 className="h-12 w-12 animate-spin mx-auto text-primary" />
             <CardTitle className="text-xl mt-4">正在初始化...</CardTitle>
             <CardDescription>
-              创建仓库并配置 GitHub Pages，请稍候
+              {initProgress || '创建仓库并配置 GitHub Pages，请稍候'}
             </CardDescription>
+            <div className="mt-4 space-y-2 text-left text-xs text-muted-foreground">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                <span>GitHub 授权完成</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+                <span>{initProgress || '创建仓库...'}</span>
+              </div>
+              <div className="flex items-center gap-2 opacity-40">
+                <div className="h-3.5 w-3.5 rounded-full border border-muted-foreground/30" />
+                <span>配置 GitHub Pages</span>
+              </div>
+              <div className="flex items-center gap-2 opacity-40">
+                <div className="h-3.5 w-3.5 rounded-full border border-muted-foreground/30" />
+                <span>初始化仓库内容</span>
+              </div>
+            </div>
           </CardHeader>
         </Card>
       </div>

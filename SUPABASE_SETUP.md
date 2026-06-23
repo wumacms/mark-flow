@@ -1,12 +1,14 @@
 # Supabase 数据库设置指南
 
+本文档说明如何配置 Supabase 以支持 MarkFlow 运行。
+
 ## 1. 创建 Supabase 项目
 
 访问 https://supabase.com/dashboard 创建新项目。
 
 ## 2. 执行 SQL 创建表结构
 
-在 Supabase Dashboard 的 SQL Editor 中执行以下 SQL：
+在 Supabase Dashboard 的 **SQL Editor** 中执行以下 SQL：
 
 ```sql
 -- 启用 UUID 扩展
@@ -47,7 +49,7 @@ create table documents (
   updated_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
--- RLS 策略
+-- 启用行级安全（RLS）
 alter table profiles enable row level security;
 alter table folders enable row level security;
 alter table documents enable row level security;
@@ -99,7 +101,7 @@ create policy "Users can delete own documents"
   on documents for delete
   using (auth.uid() = user_id);
 
--- 自动更新 updated_at
+-- 自动更新 updated_at 触发器
 create or replace function update_updated_at_column()
 returns trigger as $$
 begin
@@ -121,11 +123,43 @@ create trigger update_documents_updated_at
 
 ## 3. 配置 GitHub OAuth
 
-1. 在 GitHub 创建 OAuth App: https://github.com/settings/developers
-2. Authorization callback URL 设置为: `https://your-project.supabase.co/auth/v1/callback`
-3. 在 Supabase Dashboard → Authentication → Providers → GitHub 中填入 Client ID 和 Client Secret
-4. 确保勾选 `repo` scope
+### 3.1 在 GitHub 创建 OAuth App
+
+1. 访问 https://github.com/settings/developers
+2. 点击 **New OAuth App**
+3. 填写信息：
+   - **Application name**：MarkFlow（或任意名称）
+   - **Homepage URL**：你的应用地址（如 `http://localhost:5173`）
+   - **Authorization callback URL**：`https://你的项目ID.supabase.co/auth/v1/callback`
+     > 项目 ID 可在 Supabase Dashboard → Settings → API 中找到
+
+### 3.2 在 Supabase 中配置 GitHub Provider
+
+1. 进入 Supabase Dashboard → **Authentication** → **Providers**
+2. 找到 **GitHub**，点击启用
+3. 填入刚才创建的 OAuth App 的 **Client ID** 和 **Client Secret**
+4. **重要**：确保 Scopes 包含 `repo`（用于读写仓库）
+5. 保存设置
 
 ## 4. 配置环境变量
 
-复制 `.env.example` 为 `.env` 并填入你的 Supabase URL 和 Anon Key。
+复制项目根目录的 `.env.example` 为 `.env`：
+
+```bash
+cp .env.example .env
+```
+
+然后编辑 `.env`，填入你的 Supabase 信息：
+
+```env
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-key-here
+```
+
+> **获取方式**：Supabase Dashboard → Settings → API
+> - `VITE_SUPABASE_URL` = Project URL
+> - `VITE_SUPABASE_ANON_KEY` = anon/public key（**不要**使用 service_role key）
+
+## 5. 重启开发服务器
+
+设置好环境变量后，重启开发服务器即可正常使用。

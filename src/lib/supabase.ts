@@ -58,19 +58,46 @@ export async function signOut() {
 
 export async function getCurrentUser(): Promise<User | null> {
   const client = getSupabase()
-  const { data: { user } } = await client.auth.getUser()
+
+  // auth.getUser() validates the JWT against the server.
+  // If the session is stale (e.g. after server restart), this will fail.
+  let user: any = null
+  try {
+    const { data, error } = await client.auth.getUser()
+    if (error) {
+      // JWT is invalid/expired — sign out to clear stale session
+      console.warn('JWT validation failed, clearing stale session:', error.message)
+      await client.auth.signOut()
+      return null
+    }
+    user = data.user
+  } catch (err: any) {
+    console.warn('auth.getUser() threw, clearing stale session:', err.message)
+    await client.auth.signOut()
+    return null
+  }
+
   if (!user) return null
 
   // Get GitHub token from session
   const { data: { session } } = await client.auth.getSession()
   const providerToken = session?.provider_token || ''
 
-  // Check if user profile exists in DB
-  const { data: profile } = await client
-    .from('profiles')
-    .select('*')
-    .eq('id', user.id)
-    .single()
+  // Check if user profile exists in DB (maybeSingle returns null instead of throwing when no row found)
+  let profile: any = null
+  try {
+    const { data, error } = await client
+      .from('profiles')
+      .select('*')
+      .eq('id', user.id)
+      .maybeSingle()
+    if (!error) {
+      profile = data
+    }
+  } catch {
+    // Table might not exist yet — proceed with fallback
+    profile = null
+  }
 
   if (profile) {
     // Update GitHub token if we have a fresh one from session
@@ -95,15 +122,17 @@ export async function getCurrentUser(): Promise<User | null> {
 
   // Create profile if not exists
   const github_username = user.user_metadata?.user_name || ''
-  const newProfile = {
-    id: user.id,
-    github_username,
-    github_token: providerToken,
-    repo_name: '',
-    repo_initialized: false,
+  try {
+    await client.from('profiles').upsert({
+      id: user.id,
+      github_username,
+      github_token: providerToken,
+      repo_name: '',
+      repo_initialized: false,
+    })
+  } catch {
+    // Table might not exist — that's ok, user can still use the app
   }
-
-  await client.from('profiles').upsert(newProfile)
 
   return {
     id: user.id,
