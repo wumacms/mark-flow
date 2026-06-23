@@ -16,7 +16,7 @@ import {
   createFolder,
   deleteFolder,
 } from '@/lib/db'
-import { getFile, createOrUpdateFile, getPagesInfo, generateHtmlFromMarkdown } from '@/lib/github'
+import { getFile, createOrUpdateFile, getPagesInfo, generateHtmlFromMarkdown, generateBlogIndexHtml, type BlogArticle } from '@/lib/github'
 import { toast } from 'sonner'
 import type { Document } from '@/types'
 import { Toaster } from '@/components/ui/sonner'
@@ -265,28 +265,87 @@ export default function EditorPage() {
         published_at: new Date().toISOString(),
       })
 
+      let freshDocs: Document[] = []
       if (updated) {
         setActiveDocument(updated)
-        const docs = await getDocuments(user.id)
-        setDocuments(docs)
+        freshDocs = await getDocuments(user.id)
+        setDocuments(freshDocs)
+      } else {
+        freshDocs = await getDocuments(user.id)
       }
 
+      // Generate blog index page with all published articles
+      const publishedDocs = freshDocs.filter(d => d.published)
+      const blogArticles: BlogArticle[] = publishedDocs.map(d => {
+        const dSlug = d.slug || slugify(d.title)
+        const dDir = d.folder_path ? `${d.folder_path}/${dSlug}` : dSlug
+        // Generate excerpt: first 120 chars of content, stripped of markdown
+        const rawText = d.content
+          .replace(/```[\s\S]*?```/g, '')
+          .replace(/#{1,6}\s/g, '')
+          .replace(/\*\*|__|\*|_|~~|`/g, '')
+          .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+          .replace(/!\[([^\]]*)\]\([^)]+\)/g, '')
+          .replace(/^- /gm, '')
+          .replace(/>\s/gm, '')
+          .replace(/\n+/g, ' ')
+          .trim()
+        return {
+          title: d.title,
+          slug: dSlug,
+          folder_path: d.folder_path,
+          published_at: d.published_at || new Date().toISOString(),
+          url: `./${dDir}/`,
+          excerpt: rawText.length > 120 ? rawText.slice(0, 120) + '...' : rawText,
+        }
+      })
+
+      const blogIndexHtml = generateBlogIndexHtml(blogArticles, user.repo_name)
+      const existingIndex = await getFile(
+        user.github_token,
+        user.github_username,
+        user.repo_name,
+        'index.html',
+        'gh-pages'
+      )
+
+      await createOrUpdateFile(
+        user.github_token,
+        user.github_username,
+        user.repo_name,
+        'index.html',
+        blogIndexHtml,
+        'publish: update blog index',
+        existingIndex?.sha,
+        'gh-pages'
+      )
+
       const pageUrl = `https://${user.github_username}.github.io/${user.repo_name}/${docDir}/`
+      const siteUrl = `https://${user.github_username}.github.io/${user.repo_name}/`
       toast.success('发布成功！', {
         description: (
-          <div className="mt-1">
-            <p className="text-xs text-muted-foreground">访问地址：</p>
+          <div className="mt-1 space-y-1">
+            <p className="text-xs text-muted-foreground">文章地址：</p>
             <a
               href={pageUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-xs text-primary hover:underline break-all"
+              className="text-xs text-primary hover:underline break-all block"
             >
               {pageUrl}
             </a>
+            <p className="text-xs text-muted-foreground mt-2">博客首页：</p>
+            <a
+              href={siteUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-primary hover:underline break-all block"
+            >
+              {siteUrl}
+            </a>
           </div>
         ) as any,
-        duration: 10000,
+        duration: 12000,
       })
     } catch (err: any) {
       toast.error('发布失败: ' + err.message)

@@ -302,3 +302,247 @@ export function generateHtmlFromMarkdown(title: string, htmlContent: string): st
 </body>
 </html>`
 }
+
+/**
+ * Article entry for the blog index page.
+ */
+export interface BlogArticle {
+  title: string;
+  slug: string;
+  folder_path: string;
+  published_at: string;
+  url: string;
+  excerpt: string;
+}
+
+/**
+ * Generate a blog-style index.html that lists all published articles,
+ * grouped by their folder (category).
+ */
+export function generateBlogIndexHtml(articles: BlogArticle[], siteTitle: string = 'MarkFlow'): string {
+  // Group articles by folder_path (category)
+  const grouped: Record<string, BlogArticle[]> = {}
+  for (const article of articles) {
+    const category = article.folder_path || '未分类'
+    if (!grouped[category]) grouped[category] = []
+    grouped[category].push(article)
+  }
+
+  // Sort categories alphabetically, but put '未分类' last
+  const sortedCategories = Object.keys(grouped).sort((a, b) => {
+    if (a === '未分类') return 1
+    if (b === '未分类') return -1
+    return a.localeCompare(b, 'zh-CN')
+  })
+
+  // Build category sections HTML
+  let categoriesHtml = ''
+  for (const category of sortedCategories) {
+    const items = grouped[category]
+    // Sort articles by published_at descending
+    items.sort((a, b) => new Date(b.published_at).getTime() - new Date(a.published_at).getTime())
+
+    const articlesHtml = items.map(a => {
+      const date = new Date(a.published_at).toLocaleDateString('zh-CN', {
+        year: 'numeric', month: '2-digit', day: '2-digit'
+      })
+      return `
+        <article class="article-card">
+          <a href="${a.url}" class="article-link">
+            <h3 class="article-title">${a.title}</h3>
+            <p class="article-excerpt">${a.excerpt}</p>
+            <div class="article-meta">
+              <time>${date}</time>
+            </div>
+          </a>
+        </article>`
+    }).join('')
+
+    categoriesHtml += `
+      <section class="category-section">
+        <h2 class="category-heading">${category}</h2>
+        <div class="articles-grid">
+          ${articlesHtml}
+        </div>
+      </section>`
+  }
+
+  const totalArticles = articles.length
+
+  return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${siteTitle}</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #fafafa;
+      --bg-card: #ffffff;
+      --fg: #1a1a2e;
+      --fg-muted: #6b7280;
+      --border: #e5e7eb;
+      --accent: #2563eb;
+      --accent-hover: #1d4ed8;
+      --card-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06);
+      --card-shadow-hover: 0 10px 25px rgba(0,0,0,0.1), 0 6px 10px rgba(0,0,0,0.08);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0f0f14;
+        --bg-card: #1a1a24;
+        --fg: #e4e4e7;
+        --fg-muted: #71717a;
+        --border: #27272a;
+        --accent: #60a5fa;
+        --accent-hover: #93bbfd;
+        --card-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        --card-shadow-hover: 0 10px 25px rgba(0,0,0,0.4);
+      }
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+      line-height: 1.7;
+      min-height: 100vh;
+    }
+    .container { max-width: 960px; margin: 0 auto; padding: 0 24px; }
+
+    /* Header */
+    header {
+      padding: 48px 0 32px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 48px;
+    }
+    header h1 {
+      font-size: 2.25rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      margin-bottom: 8px;
+    }
+    header p {
+      color: var(--fg-muted);
+      font-size: 1rem;
+    }
+    .article-count {
+      display: inline-block;
+      margin-top: 12px;
+      padding: 4px 12px;
+      background: var(--accent);
+      color: #fff;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+
+    /* Category sections */
+    .category-section {
+      margin-bottom: 48px;
+    }
+    .category-heading {
+      font-size: 1.25rem;
+      font-weight: 700;
+      margin-bottom: 20px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid var(--accent);
+      display: inline-block;
+    }
+    .articles-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 20px;
+    }
+
+    /* Article card */
+    .article-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: var(--card-shadow);
+      transition: box-shadow 0.25s ease, transform 0.25s ease;
+      overflow: hidden;
+    }
+    .article-card:hover {
+      box-shadow: var(--card-shadow-hover);
+      transform: translateY(-3px);
+    }
+    .article-link {
+      display: block;
+      padding: 24px;
+      text-decoration: none;
+      color: inherit;
+    }
+    .article-title {
+      font-size: 1.1rem;
+      font-weight: 700;
+      margin-bottom: 8px;
+      line-height: 1.4;
+      color: var(--fg);
+    }
+    .article-card:hover .article-title {
+      color: var(--accent);
+    }
+    .article-excerpt {
+      font-size: 0.875rem;
+      color: var(--fg-muted);
+      line-height: 1.6;
+      margin-bottom: 12px;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .article-meta {
+      font-size: 0.8rem;
+      color: var(--fg-muted);
+    }
+
+    /* Footer */
+    footer {
+      padding: 32px 0;
+      border-top: 1px solid var(--border);
+      text-align: center;
+      color: var(--fg-muted);
+      font-size: 0.85rem;
+      margin-top: 48px;
+    }
+    footer a { color: var(--accent); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+
+    /* Empty state */
+    .empty-state {
+      text-align: center;
+      padding: 80px 24px;
+      color: var(--fg-muted);
+    }
+    .empty-state p { font-size: 1.1rem; }
+
+    @media (max-width: 640px) {
+      header h1 { font-size: 1.75rem; }
+      .articles-grid { grid-template-columns: 1fr; }
+      .article-link { padding: 20px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>${siteTitle}</h1>
+      <p>用 Markdown 书写，向世界发布</p>
+      ${totalArticles > 0 ? `<span class="article-count">共 ${totalArticles} 篇文章</span>` : ''}
+    </header>
+
+    <main>
+      ${totalArticles > 0 ? categoriesHtml : '<div class="empty-state"><p>暂无已发布的文章，开始创作吧！</p></div>'}
+    </main>
+
+    <footer>
+      <p>Powered by <a href="https://github.com" target="_blank" rel="noopener">MarkFlow</a></p>
+    </footer>
+  </div>
+</body>
+</html>`
+}
