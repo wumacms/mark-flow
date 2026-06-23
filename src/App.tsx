@@ -2,10 +2,11 @@ import { ThemeProvider } from 'next-themes'
 import { AuthProvider, useAuth } from '@/contexts/AuthContext'
 import { AppProvider } from '@/contexts/AppContext'
 import { LoadingScreen } from '@/components/LoadingScreen'
+import { SetupGuide } from '@/components/SetupGuide'
 import EditorPage from '@/pages/EditorPage'
 import { Button } from '@/components/ui/button'
 import { Github, BookOpen, Sparkles, ArrowRight } from 'lucide-react'
-import { signInWithGitHub } from '@/lib/supabase'
+import { signInWithGitHub, isSupabaseConfigured } from '@/lib/supabase'
 import { Toaster } from '@/components/ui/sonner'
 
 function LandingPage() {
@@ -108,7 +109,9 @@ function LandingPage() {
 }
 
 function AppContent() {
-  const { user, loading } = useAuth()
+  const { user, loading, isConfigured } = useAuth()
+
+  if (!isConfigured) return <SetupGuide />
 
   if (loading) return <LoadingScreen />
 

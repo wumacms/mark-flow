@@ -1,8 +1,9 @@
-import { supabase } from '@/lib/supabase'
+import { getSupabase } from '@/lib/supabase'
 import type { Document, Folder } from '@/types'
 
 // Documents CRUD
 export async function getDocuments(userId: string): Promise<Document[]> {
+  const supabase = getSupabase()
   const { data, error } = await supabase
     .from('documents')
     .select('*')
@@ -13,6 +14,7 @@ export async function getDocuments(userId: string): Promise<Document[]> {
 }
 
 export async function getDocument(id: string): Promise<Document | null> {
+  const supabase = getSupabase()
   const { data, error } = await supabase
     .from('documents')
     .select('*')
@@ -28,6 +30,7 @@ export async function createDocument(
   slug: string,
   folderPath: string = ''
 ): Promise<Document | null> {
+  const supabase = getSupabase()
   const { data, error } = await supabase
     .from('documents')
     .insert({
@@ -48,6 +51,7 @@ export async function updateDocument(
   id: string,
   updates: Partial<Pick<Document, 'title' | 'content' | 'slug' | 'published' | 'published_at'>>
 ): Promise<Document | null> {
+  const supabase = getSupabase()
   const { data, error } = await supabase
     .from('documents')
     .update({ ...updates, updated_at: new Date().toISOString() })
@@ -59,12 +63,14 @@ export async function updateDocument(
 }
 
 export async function deleteDocument(id: string): Promise<void> {
+  const supabase = getSupabase()
   const { error } = await supabase.from('documents').delete().eq('id', id)
   if (error) throw error
 }
 
 // Folders CRUD
 export async function getFolders(userId: string): Promise<Folder[]> {
+  const supabase = getSupabase()
   const { data, error } = await supabase
     .from('folders')
     .select('*')
@@ -79,6 +85,7 @@ export async function createFolder(
   name: string,
   parentPath: string | null = null
 ): Promise<Folder | null> {
+  const supabase = getSupabase()
   const path = parentPath ? `${parentPath}/${name}` : name
   const { data, error } = await supabase
     .from('folders')
@@ -90,6 +97,7 @@ export async function createFolder(
 }
 
 export async function deleteFolder(id: string): Promise<void> {
+  const supabase = getSupabase()
   const { error } = await supabase.from('folders').delete().eq('id', id)
   if (error) throw error
 }

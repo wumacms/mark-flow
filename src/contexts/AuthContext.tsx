@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import type { User } from '@/types'
-import { supabase, getCurrentUser } from '@/lib/supabase'
+import { getSupabase, getCurrentUser, isSupabaseConfigured } from '@/lib/supabase'
 import type { Session } from '@supabase/supabase-js'
 
 interface AuthContextType {
@@ -8,6 +8,7 @@ interface AuthContextType {
   session: Session | null
   loading: boolean
   refreshUser: () => Promise<void>
+  isConfigured: boolean
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -15,6 +16,7 @@ const AuthContext = createContext<AuthContextType>({
   session: null,
   loading: true,
   refreshUser: async () => {},
+  isConfigured: false,
 })
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -23,11 +25,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   const refreshUser = async () => {
+    if (!isSupabaseConfigured) {
+      setLoading(false)
+      return
+    }
     const u = await getCurrentUser()
     setUser(u)
   }
 
   useEffect(() => {
+    if (!isSupabaseConfigured) {
+      setLoading(false)
+      return
+    }
+
+    const supabase = getSupabase()
+
     // Get initial session
     supabase.auth.getSession().then(({ data: { session: s } }) => {
       setSession(s)
@@ -59,7 +72,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, refreshUser }}>
+    <AuthContext.Provider value={{ user, session, loading, refreshUser, isConfigured: isSupabaseConfigured }}>
       {children}
     </AuthContext.Provider>
   )

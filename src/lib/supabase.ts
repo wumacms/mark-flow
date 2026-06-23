@@ -1,19 +1,46 @@
 import { createClient } from '@supabase/supabase-js'
 import type { User } from '@/types'
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || ''
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || ''
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    autoRefreshToken: true,
-    persistSession: true,
-    detectSessionInUrl: true,
+// Check if Supabase is configured
+export const isSupabaseConfigured = !!(supabaseUrl && supabaseAnonKey)
+
+// Lazy initialization - only create client if configured
+let _supabase: ReturnType<typeof createClient> | null = null
+
+export function getSupabase() {
+  if (!isSupabaseConfigured) {
+    throw new Error('Supabase is not configured. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY environment variables.')
+  }
+  if (!_supabase) {
+    _supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        autoRefreshToken: true,
+        persistSession: true,
+        detectSessionInUrl: true,
+      },
+    })
+  }
+  return _supabase
+}
+
+// For backwards compatibility - but will throw if not configured
+export const supabase = new Proxy({} as ReturnType<typeof createClient>, {
+  get(_target, prop) {
+    const client = getSupabase()
+    const value = (client as any)[prop]
+    if (typeof value === 'function') {
+      return value.bind(client)
+    }
+    return value
   },
 })
 
 export async function signInWithGitHub() {
-  const { data, error } = await supabase.auth.signInWithOAuth({
+  const client = getSupabase()
+  const { data, error } = await client.auth.signInWithOAuth({
     provider: 'github',
     options: {
       scopes: 'repo',
@@ -24,20 +51,22 @@ export async function signInWithGitHub() {
 }
 
 export async function signOut() {
-  const { error } = await supabase.auth.signOut()
+  const client = getSupabase()
+  const { error } = await client.auth.signOut()
   return { error }
 }
 
 export async function getCurrentUser(): Promise<User | null> {
-  const { data: { user } } = await supabase.auth.getUser()
+  const client = getSupabase()
+  const { data: { user } } = await client.auth.getUser()
   if (!user) return null
 
   // Get GitHub token from session
-  const { data: { session } } = await supabase.auth.getSession()
+  const { data: { session } } = await client.auth.getSession()
   const providerToken = session?.provider_token || ''
 
   // Check if user profile exists in DB
-  const { data: profile } = await supabase
+  const { data: profile } = await client
     .from('profiles')
     .select('*')
     .eq('id', user.id)
@@ -46,7 +75,7 @@ export async function getCurrentUser(): Promise<User | null> {
   if (profile) {
     // Update GitHub token if we have a fresh one from session
     if (providerToken && providerToken !== profile.github_token) {
-      await supabase
+      await client
         .from('profiles')
         .update({ github_token: providerToken })
         .eq('id', user.id)
@@ -74,7 +103,7 @@ export async function getCurrentUser(): Promise<User | null> {
     repo_initialized: false,
   }
 
-  await supabase.from('profiles').upsert(newProfile)
+  await client.from('profiles').upsert(newProfile)
 
   return {
     id: user.id,
@@ -89,13 +118,14 @@ export async function getCurrentUser(): Promise<User | null> {
 }
 
 export async function updateUserProfile(userId: string, updates: Partial<User>) {
+  const client = getSupabase()
   const updateData: Record<string, any> = {}
   if (updates.github_username !== undefined) updateData.github_username = updates.github_username
   if (updates.github_token !== undefined) updateData.github_token = updates.github_token
   if (updates.repo_name !== undefined) updateData.repo_name = updates.repo_name
   if (updates.repo_initialized !== undefined) updateData.repo_initialized = updates.repo_initialized
 
-  const { error } = await supabase
+  const { error } = await client
     .from('profiles')
     .update(updateData)
     .eq('id', userId)
