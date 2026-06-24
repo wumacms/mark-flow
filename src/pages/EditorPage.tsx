@@ -20,7 +20,6 @@ import { getFile, createOrUpdateFile, getPagesInfo, generateHtmlFromMarkdown, ge
 import { toast } from 'sonner'
 import type { Document } from '@/types'
 import { Toaster } from '@/components/ui/sonner'
-import { PanelLeftOpen } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 export default function EditorPage() {
@@ -456,17 +455,6 @@ export default function EditorPage() {
 
         {/* Main editor area */}
         <div className="flex-1 flex flex-col overflow-hidden relative">
-          {sidebarCollapsed && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="absolute top-2 left-2 z-10 w-8 h-8"
-              onClick={() => {}}
-            >
-              <PanelLeftOpen className="h-4 w-4" />
-            </Button>
-          )}
-
           {activeDocument ? (
             <MarkdownEditor
               value={editorContent}
