@@ -332,6 +332,19 @@ export function generateHtmlFromMarkdown(title: string, htmlContent: string): st
     .markdown-preview input[type="checkbox"] { margin-right: 0.5em; }
     .markdown-preview .katex-display { overflow-x: auto; overflow-y: hidden; padding: 0.5em 0; }
 
+    /* Mermaid diagram styles */
+    .mermaid {
+      display: flex;
+      justify-content: center;
+      margin: 24px auto;
+      max-width: 800px;
+      overflow-x: auto;
+    }
+    .mermaid svg {
+      max-width: 100% !important;
+      height: auto !important;
+    }
+
     @media (prefers-color-scheme: dark) {
       body { background: #0f0f14; color: #e4e4e7; }
       .container { background: #1a1a24; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
@@ -393,6 +406,30 @@ export function generateHtmlFromMarkdown(title: string, htmlContent: string): st
         document.querySelector('.container').style.boxShadow = '0 1px 3px rgba(0,0,0,0.3)';
       }
     })();
+  </script>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+    
+    // Find all mermaid code blocks and transform them for rendering
+    const codeBlocks = document.querySelectorAll('pre code.language-mermaid');
+    if (codeBlocks.length > 0) {
+      codeBlocks.forEach((codeBlock) => {
+        const pre = codeBlock.parentElement;
+        const container = document.createElement('div');
+        container.className = 'mermaid';
+        container.textContent = codeBlock.textContent.trim();
+        pre.parentElement.replaceChild(container, pre);
+      });
+      
+      const isDark = localStorage.getItem('mf-theme') === 'dark' || 
+                     (!localStorage.getItem('mf-theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      
+      mermaid.initialize({
+        startOnLoad: true,
+        theme: isDark ? 'dark' : 'default',
+        securityLevel: 'loose'
+      });
+    }
   </script>
 </body>
 </html>`
