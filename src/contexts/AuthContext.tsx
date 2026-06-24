@@ -31,13 +31,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [authError, setAuthError] = useState<string | null>(null)
   const loadingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Safety net: if loading takes too long, force stop it
+  // Safety net: if loading takes too long, try fallback from local session
   useEffect(() => {
     if (loading) {
-      loadingTimeoutRef.current = setTimeout(() => {
-        console.warn('Auth loading timeout reached, forcing stop')
+      loadingTimeoutRef.current = setTimeout(async () => {
+        console.warn('Auth loading timeout reached, attempting fallback from local session')
+        try {
+          const supabase = getSupabase()
+          const { data: { session: localSession } } = await supabase.auth.getSession()
+          if (localSession) {
+            console.log('Found local session, using fallback user')
+            setUser(buildFallbackUser(localSession))
+            setSession(localSession)
+            setAuthError(null)
+          } else {
+            setAuthError('加载超时，请刷新页面重试')
+          }
+        } catch {
+          setAuthError('加载超时，请刷新页面重试')
+        }
         setLoading(false)
-        setAuthError('加载超时，请刷新页面重试')
       }, LOADING_TIMEOUT)
     } else {
       if (loadingTimeoutRef.current) {
@@ -99,36 +112,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (cancelled) return
         setSession(s)
         if (s) {
+          // Set fallback user immediately so the app can proceed
+          // even if getCurrentUser (network call) is slow
+          const fallback = buildFallbackUser(s)
+          setUser(fallback)
+          setAuthError(null)
+
+          // Then try to get the full user profile (network call)
           getCurrentUser()
             .then(u => {
               if (cancelled) return
               if (u) {
                 setUser(u)
-                setAuthError(null)
-              } else {
-                // JWT was invalid, session has been cleared
-                console.warn('Session expired, user cleared')
-                setUser(null)
-                setSession(null)
-                setAuthError(null)
               }
+              // If getCurrentUser returns null (JWT invalid), keep fallback user
+              // and let the auth state change listener handle sign-out if needed
+              setAuthError(null)
               setLoading(false)
             })
             .catch((err) => {
               if (cancelled) return
-              console.error('Failed to get current user, using fallback:', err)
-              // Re-check session in case it was cleared during getCurrentUser
-              supabase.auth.getSession().then(({ data: { session: freshSession } }) => {
-                if (cancelled) return
-                if (freshSession) {
-                  setUser(buildFallbackUser(freshSession))
-                } else {
-                  setUser(null)
-                  setSession(null)
-                }
-                setAuthError(null)
-                setLoading(false)
-              })
+              console.error('Failed to get current user, keeping fallback:', err)
+              // Fallback user is already set, just stop loading
+              setAuthError(null)
+              setLoading(false)
             })
         } else {
           setLoading(false)

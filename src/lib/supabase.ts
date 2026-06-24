@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import type { User } from '@/types'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
@@ -8,7 +8,7 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 export const isSupabaseConfigured = !!(supabaseUrl && supabaseAnonKey)
 
 // Lazy initialization - only create client if configured
-let _supabase: ReturnType<typeof createClient> | null = null
+let _supabase: SupabaseClient | null = null
 
 export function getSupabase() {
   if (!isSupabaseConfigured) {
@@ -27,7 +27,7 @@ export function getSupabase() {
 }
 
 // For backwards compatibility - but will throw if not configured
-export const supabase = new Proxy({} as ReturnType<typeof createClient>, {
+export const supabase = new Proxy({} as SupabaseClient, {
   get(_target, prop) {
     const client = getSupabase()
     const value = (client as any)[prop]
@@ -65,15 +65,26 @@ export async function getCurrentUser(): Promise<User | null> {
   try {
     const { data, error } = await client.auth.getUser()
     if (error) {
-      // JWT is invalid/expired — sign out to clear stale session
-      console.warn('JWT validation failed, clearing stale session:', error.message)
-      await client.auth.signOut()
+      // Check if this is a definitive auth error vs a transient network error
+      const isAuthError = error.message?.includes('invalid') ||
+        error.message?.includes('expired') ||
+        error.message?.includes('JWT') ||
+        error.status === 401 ||
+        error.status === 403
+      if (isAuthError) {
+        console.warn('JWT validation failed, clearing stale session:', error.message)
+        await client.auth.signOut()
+        return null
+      }
+      // For transient errors (network issues, timeouts), don't sign out
+      // Let the caller use fallback user from local session
+      console.warn('auth.getUser() failed (transient), not clearing session:', error.message)
       return null
     }
     user = data.user
   } catch (err: any) {
-    console.warn('auth.getUser() threw, clearing stale session:', err.message)
-    await client.auth.signOut()
+    // Network-level error — don't destroy the local session
+    console.warn('auth.getUser() threw (likely network error), not clearing session:', err.message)
     return null
   }
 

@@ -111,6 +111,10 @@ function LandingPage() {
 function AppContent() {
   const { user, loading, isConfigured, authError } = useAuth()
 
+  const handleLogin = async () => {
+    await signInWithGitHub()
+  }
+
   if (!isConfigured) return <SetupGuide />
 
   if (loading) return <LoadingScreen />
