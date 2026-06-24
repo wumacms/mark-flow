@@ -32,6 +32,19 @@ async function githubRequest(
   return response.json()
 }
 
+export async function verifyGitHubToken(token: string): Promise<{ username: string; avatar_url: string } | null> {
+  try {
+    const result = await githubRequest(token, '/user')
+    return {
+      username: result.login,
+      avatar_url: result.avatar_url,
+    }
+  } catch (err) {
+    console.error('Failed to verify GitHub token:', err)
+    return null
+  }
+}
+
 export async function createRepository(token: string, name: string, description: string = 'My Markdown Documents', autoInit: boolean = false) {
   return githubRequest(token, '/user/repos', 'POST', {
     name,

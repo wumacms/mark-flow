@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, useRef } from 'react'
 import type { User } from '@/types'
 import { getSupabase, getCurrentUser, isSupabaseConfigured } from '@/lib/supabase'
 import type { Session } from '@supabase/supabase-js'
+import { verifyGitHubToken } from '@/lib/github'
 
 interface AuthContextType {
   user: User | null
@@ -10,6 +11,7 @@ interface AuthContextType {
   refreshUser: () => Promise<void>
   isConfigured: boolean
   authError: string | null
+  isTokenValid: boolean | null
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -19,6 +21,7 @@ const AuthContext = createContext<AuthContextType>({
   refreshUser: async () => {},
   isConfigured: false,
   authError: null,
+  isTokenValid: null,
 })
 
 // Timeout in ms after which loading is considered stuck
@@ -29,21 +32,57 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
   const [authError, setAuthError] = useState<string | null>(null)
+  const [isTokenValid, setIsTokenValid] = useState<boolean | null>(null)
   const loadingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Safety net: if loading takes too long, try fallback from local session
+  // Verify token when user or github_token changes
+  useEffect(() => {
+    let active = true
+    const checkToken = async () => {
+      if (!user?.github_token) {
+        setIsTokenValid(false)
+        return
+      }
+      setIsTokenValid(null)
+      const details = await verifyGitHubToken(user.github_token)
+      if (active) {
+        setIsTokenValid(!!details)
+      }
+    }
+    checkToken()
+    return () => {
+      active = false
+    }
+  }, [user?.github_token])
+
+  // Safety net: if loading takes too long, try fallback from local session storage
   useEffect(() => {
     if (loading) {
-      loadingTimeoutRef.current = setTimeout(async () => {
-        console.warn('Auth loading timeout reached, attempting fallback from local session')
+      loadingTimeoutRef.current = setTimeout(() => {
+        console.warn('Auth loading timeout reached, attempting fallback from localStorage')
         try {
-          const supabase = getSupabase()
-          const { data: { session: localSession } } = await supabase.auth.getSession()
-          if (localSession) {
-            console.log('Found local session, using fallback user')
-            setUser(buildFallbackUser(localSession))
-            setSession(localSession)
-            setAuthError(null)
+          // Read session directly from localStorage to avoid any Supabase lock issues.
+          // The Supabase storage key follows the pattern: sb-<project-ref>-auth-token
+          const storageKey = `sb-${new URL(import.meta.env.VITE_SUPABASE_URL).hostname.split('.')[0]}-auth-token`
+          const raw = localStorage.getItem(storageKey)
+          if (raw) {
+            const parsed = JSON.parse(raw)
+            if (parsed?.user) {
+              console.log('Found local session in localStorage, using fallback user')
+              setUser({
+                id: parsed.user.id,
+                email: parsed.user.email || '',
+                name: parsed.user.user_metadata?.full_name || parsed.user.user_metadata?.name || '',
+                avatar_url: parsed.user.user_metadata?.avatar_url || '',
+                github_username: parsed.user.user_metadata?.user_name || '',
+                github_token: parsed.provider_token || '',
+                repo_name: '',
+                repo_initialized: false,
+              })
+              setAuthError(null)
+            } else {
+              setAuthError('加载超时，请刷新页面重试')
+            }
           } else {
             setAuthError('加载超时，请刷新页面重试')
           }
@@ -106,38 +145,70 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let cancelled = false
     const supabase = getSupabase()
 
-    // Get initial session
-    supabase.auth.getSession()
-      .then(({ data: { session: s } }) => {
+    // 1. Register auth state change listener for SUBSEQUENT events only.
+    //    Skip INITIAL_SESSION — it fires before the client's PostgREST auth
+    //    token is set, so RLS-protected DB queries would fail silently.
+    //    Initial profile loading is handled by getSession() below.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, s) => {
         if (cancelled) return
+        console.log('Auth state changed:', event, s ? 'session exists' : 'no session')
+
+        // INITIAL_SESSION is handled by getSession() below
+        if (event === 'INITIAL_SESSION') return
+
         setSession(s)
         if (s) {
-          // Set fallback user immediately so the app can proceed
-          // even if getCurrentUser (network call) is slow
           const fallback = buildFallbackUser(s)
           setUser(fallback)
           setAuthError(null)
 
-          // Then try to get the full user profile (network call)
-          getCurrentUser()
-            .then(u => {
-              if (cancelled) return
-              if (u) {
+          // Defer the DB query to prevent deadlocking Supabase's internal lock
+          // which is held during onAuthStateChange event broadcasting.
+          setTimeout(async () => {
+            try {
+              const u = await getCurrentUser(s)
+              if (!cancelled && u) {
                 setUser(u)
               }
-              // If getCurrentUser returns null (JWT invalid), keep fallback user
-              // and let the auth state change listener handle sign-out if needed
-              setAuthError(null)
-              setLoading(false)
-            })
-            .catch((err) => {
-              if (cancelled) return
-              console.error('Failed to get current user, keeping fallback:', err)
-              // Fallback user is already set, just stop loading
-              setAuthError(null)
-              setLoading(false)
-            })
+            } catch (err) {
+              console.error('Failed to get full user profile, using fallback:', err)
+            }
+          }, 0)
         } else {
+          setUser(null)
+          setAuthError(null)
+        }
+        if (!cancelled) {
+          setLoading(false)
+        }
+      }
+    )
+
+    // 2. Load initial session and full profile.
+    //    getSession() resolves AFTER the client is fully initialised,
+    //    so the PostgREST auth token is set and RLS queries work.
+    supabase.auth.getSession()
+      .then(async ({ data: { session: s } }) => {
+        if (cancelled) return
+        setSession(s)
+        if (s) {
+          // Set fallback user immediately
+          const fallback = buildFallbackUser(s)
+          setUser(fallback)
+          setAuthError(null)
+
+          // Load full profile from database
+          try {
+            const u = await getCurrentUser(s)
+            if (!cancelled && u) {
+              setUser(u)
+            }
+          } catch (err) {
+            console.error('Failed to get full user profile, using fallback:', err)
+          }
+        }
+        if (!cancelled) {
           setLoading(false)
         }
       })
@@ -148,42 +219,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setLoading(false)
       })
 
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, s) => {
-        if (cancelled) return
-        console.log('Auth state changed:', event, s ? 'session exists' : 'no session')
-        setSession(s)
-        if (s) {
-          try {
-            const u = await getCurrentUser()
-            if (u) {
-              setUser(u)
-            } else {
-              // Session exists but JWT invalid — sign out happened inside getCurrentUser
-              setUser(null)
-              setSession(null)
-            }
-            setAuthError(null)
-          } catch {
-            // Re-check if session still valid
-            const { data: { session: freshS } } = await supabase.auth.getSession()
-            if (freshS) {
-              setUser(buildFallbackUser(freshS))
-            } else {
-              setUser(null)
-              setSession(null)
-            }
-            setAuthError(null)
-          }
-        } else {
-          setUser(null)
-          setAuthError(null)
-        }
-        setLoading(false)
-      }
-    )
-
     return () => {
       cancelled = true
       subscription.unsubscribe()
@@ -191,7 +226,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, refreshUser, isConfigured: isSupabaseConfigured, authError }}>
+    <AuthContext.Provider value={{ user, session, loading, refreshUser, isConfigured: isSupabaseConfigured, authError, isTokenValid }}>
       {children}
     </AuthContext.Provider>
   )

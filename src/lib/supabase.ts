@@ -1,4 +1,4 @@
-import { createClient, SupabaseClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient, Session } from '@supabase/supabase-js'
 import type { User } from '@/types'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
@@ -56,43 +56,46 @@ export async function signOut() {
   return { error }
 }
 
-export async function getCurrentUser(): Promise<User | null> {
+export async function getCurrentUser(session?: Session | null): Promise<User | null> {
   const client = getSupabase()
 
-  // auth.getUser() validates the JWT against the server.
-  // If the session is stale (e.g. after server restart), this will fail.
   let user: any = null
-  try {
-    const { data, error } = await client.auth.getUser()
-    if (error) {
-      // Check if this is a definitive auth error vs a transient network error
-      const isAuthError = error.message?.includes('invalid') ||
-        error.message?.includes('expired') ||
-        error.message?.includes('JWT') ||
-        error.status === 401 ||
-        error.status === 403
-      if (isAuthError) {
-        console.warn('JWT validation failed, clearing stale session:', error.message)
-        await client.auth.signOut()
+  let providerToken = ''
+
+  if (session) {
+    user = session.user
+    providerToken = session.provider_token || ''
+  } else {
+    try {
+      const { data, error } = await client.auth.getUser()
+      if (error) {
+        // Check if this is a definitive auth error vs a transient network error
+        const isAuthError = error.message?.includes('invalid') ||
+          error.message?.includes('expired') ||
+          error.message?.includes('JWT') ||
+          error.status === 401 ||
+          error.status === 403
+        if (isAuthError) {
+          console.warn('JWT validation failed, clearing stale session:', error.message)
+          await client.auth.signOut()
+          return null
+        }
+        // For transient errors (network issues, timeouts), don't sign out
+        // Let the caller use fallback user from local session
+        console.warn('auth.getUser() failed (transient), not clearing session:', error.message)
         return null
       }
-      // For transient errors (network issues, timeouts), don't sign out
-      // Let the caller use fallback user from local session
-      console.warn('auth.getUser() failed (transient), not clearing session:', error.message)
+      user = data.user
+      const { data: { session: currentSession } } = await client.auth.getSession()
+      providerToken = currentSession?.provider_token || ''
+    } catch (err: any) {
+      // Network-level error — don't destroy the local session
+      console.warn('auth.getUser() threw (likely network error), not clearing session:', err.message)
       return null
     }
-    user = data.user
-  } catch (err: any) {
-    // Network-level error — don't destroy the local session
-    console.warn('auth.getUser() threw (likely network error), not clearing session:', err.message)
-    return null
   }
 
   if (!user) return null
-
-  // Get GitHub token from session
-  const { data: { session } } = await client.auth.getSession()
-  const providerToken = session?.provider_token || ''
 
   // Check if user profile exists in DB (maybeSingle returns null instead of throwing when no row found)
   let profile: any = null
@@ -113,10 +116,14 @@ export async function getCurrentUser(): Promise<User | null> {
   if (profile) {
     // Update GitHub token if we have a fresh one from session
     if (providerToken && providerToken !== profile.github_token) {
-      await client
-        .from('profiles')
-        .update({ github_token: providerToken })
-        .eq('id', user.id)
+      try {
+        await client
+          .from('profiles')
+          .update({ github_token: providerToken })
+          .eq('id', user.id)
+      } catch {
+        // Token update failed — not critical, proceed with existing data
+      }
     }
 
     return {
@@ -134,7 +141,7 @@ export async function getCurrentUser(): Promise<User | null> {
   // Create profile if not exists
   const github_username = user.user_metadata?.user_name || ''
   try {
-    await client.from('profiles').upsert({
+    await client.from('profiles').insert({
       id: user.id,
       github_username,
       github_token: providerToken,
@@ -142,7 +149,7 @@ export async function getCurrentUser(): Promise<User | null> {
       repo_initialized: false,
     })
   } catch {
-    // Table might not exist — that's ok, user can still use the app
+    // Table might not exist or profile already exists — that's ok, user can still use the app
   }
 
   return {

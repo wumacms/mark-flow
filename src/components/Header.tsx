@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { signOut } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { ThemeToggle } from '@/components/ThemeToggle'
@@ -13,6 +14,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { LogOut, User, Settings, Github, ExternalLink } from 'lucide-react'
 import { toast } from 'sonner'
+import { SettingsModal } from '@/components/SettingsModal'
 
 interface HeaderProps {
   pagesUrl: string | null
@@ -20,6 +22,7 @@ interface HeaderProps {
 
 export function Header({ pagesUrl }: HeaderProps) {
   const { user } = useAuth()
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   const handleSignOut = async () => {
     const { error } = await signOut()
@@ -73,6 +76,10 @@ export function Header({ pagesUrl }: HeaderProps) {
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
+            <DropdownMenuItem className="gap-2 cursor-pointer" onClick={() => setSettingsOpen(true)}>
+              <Settings className="h-4 w-4" />
+              <span>GitHub 设置</span>
+            </DropdownMenuItem>
             <DropdownMenuItem className="gap-2" disabled>
               <Github className="h-4 w-4" />
               <span>{user?.github_username}</span>
@@ -90,13 +97,14 @@ export function Header({ pagesUrl }: HeaderProps) {
               </DropdownMenuItem>
             )}
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={handleSignOut} className="gap-2 text-destructive">
+            <DropdownMenuItem onClick={handleSignOut} className="gap-2 text-destructive cursor-pointer">
               <LogOut className="h-4 w-4" />
               <span>退出登录</span>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+      <SettingsModal open={settingsOpen} onOpenChange={setSettingsOpen} />
     </header>
   )
 }

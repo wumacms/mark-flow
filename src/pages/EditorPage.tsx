@@ -52,7 +52,7 @@ export default function EditorPage() {
       return
     }
     loadAllData()
-  }, [user?.id])
+  }, [user?.id, user?.repo_initialized])
 
   // Load pages URL
   useEffect(() => {
