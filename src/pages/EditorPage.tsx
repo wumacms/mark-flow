@@ -1,4 +1,11 @@
 import { useState, useEffect } from 'react'
+import { renderToString } from 'react-dom/server'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import remarkMath from 'remark-math'
+import rehypeRaw from 'rehype-raw'
+import rehypeHighlight from 'rehype-highlight'
+import rehypeKatex from 'rehype-katex'
 import { useAuth } from '@/contexts/AuthContext'
 import { useApp } from '@/contexts/AppContext'
 import { Header } from '@/components/Header'
@@ -237,7 +244,7 @@ export default function EditorPage() {
         ? `${activeDocument.folder_path}/${slug}`
         : slug
 
-      const htmlContent = simpleMarkdownToHtml(editorContent)
+      const htmlContent = renderMarkdownToHtml(editorContent)
       const fullHtml = generateHtmlFromMarkdown(editorTitle || activeDocument.title, htmlContent)
 
       const existingHtml = await getFile(
@@ -353,74 +360,16 @@ export default function EditorPage() {
     }
   }
 
-  const escapeHtml = (text: string): string => {
-    return text
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-  }
-
-  // Simple markdown to HTML conversion for publishing
-  const simpleMarkdownToHtml = (md: string): string => {
-    let html = md
-
-    // Code blocks (process first to avoid interference)
-    // IMPORTANT: Do NOT add 'hljs' class — highlight.js adds it automatically.
-    // If we add it here, highlight.js will skip these elements thinking they're already highlighted.
-    html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_m, lang, code) => {
-      const langClass = lang ? ` language-${lang}` : ''
-      return `<pre><code class="${langClass}">${escapeHtml(code.trim())}</code></pre>`
-    })
-
-    // Inline code
-    html = html.replace(/`([^`]+)`/g, '<code>$1</code>')
-
-    // Headers
-    html = html.replace(/^###### (.+)$/gm, '<h6>$1</h6>')
-    html = html.replace(/^##### (.+)$/gm, '<h5>$1</h5>')
-    html = html.replace(/^#### (.+)$/gm, '<h4>$1</h4>')
-    html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>')
-    html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>')
-    html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>')
-
-    // Bold and italic
-    html = html.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
-    html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    html = html.replace(/\*(.+?)\*/g, '<em>$1</em>')
-
-    // Strikethrough
-    html = html.replace(/~~(.+?)~~/g, '<del>$1</del>')
-
-    // Images (before links)
-    html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" />')
-
-    // Links
-    html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
-
-    // Blockquote
-    html = html.replace(/^&gt; (.+)$/gm, '<blockquote><p>$1</p></blockquote>')
-
-    // Horizontal rule
-    html = html.replace(/^---$/gm, '<hr />')
-
-    // Task lists
-    html = html.replace(/^- \[x\] (.+)$/gm, '<li><input type="checkbox" checked disabled /> $1</li>')
-    html = html.replace(/^- \[ \] (.+)$/gm, '<li><input type="checkbox" disabled /> $1</li>')
-
-    // Unordered list items
-    html = html.replace(/^- (.+)$/gm, '<li>$1</li>')
-
-    // Wrap consecutive <li> in <ul>
-    html = html.replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul>$1</ul>')
-
-    // Paragraphs for remaining plain text lines
-    html = html.replace(/^(?!<[a-z/])((?!<\/?[a-z]).+)$/gm, '<p>$1</p>')
-
-    // Clean up empty paragraphs
-    html = html.replace(/<p>\s*<\/p>/g, '')
-
-    return html
+  const renderMarkdownToHtml = (md: string): string => {
+    const element = (
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm, remarkMath]}
+        rehypePlugins={[rehypeRaw, rehypeHighlight, rehypeKatex]}
+      >
+        {md}
+      </ReactMarkdown>
+    )
+    return renderToString(element)
   }
 
   // Onboarding flow

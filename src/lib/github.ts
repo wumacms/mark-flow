@@ -221,94 +221,111 @@ export function generateHtmlFromMarkdown(title: string, htmlContent: string): st
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${title}</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@5/github-markdown.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16/dist/katex.min.css">
-  <!-- Highlight.js themes: light default, dark via media query -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css" media="(prefers-color-scheme: light)">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
   <style>
     :root { color-scheme: light dark; }
-    body { margin: 0; padding: 0; }
+    * { box-sizing: border-box; }
+    body { 
+      margin: 0; 
+      padding: 0; 
+      font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', system-ui, -apple-system, sans-serif;
+      background: #fafafa;
+      color: #1a1a2e;
+    }
+    .container {
+      max-width: 900px; 
+      margin: 40px auto; 
+      padding: 32px; 
+      background: #ffffff; 
+      border-radius: 12px; 
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06);
+    }
+    
+    /* Markdown preview styles (matching the editor preview) */
+    .markdown-preview { line-height: 1.75; }
+    .markdown-preview h1, .markdown-preview h2, .markdown-preview h3, .markdown-preview h4, .markdown-preview h5, .markdown-preview h6 { margin-top: 1.5em; margin-bottom: 0.5em; font-weight: 700; line-height: 1.3; }
+    .markdown-preview h1 { font-size: 2em; border-bottom: 1px solid #e5e7eb; padding-bottom: 0.3em; }
+    .markdown-preview h2 { font-size: 1.5em; border-bottom: 1px solid #e5e7eb; padding-bottom: 0.3em; }
+    .markdown-preview h3 { font-size: 1.25em; }
+    .markdown-preview h4 { font-size: 1em; }
+    .markdown-preview p { margin-bottom: 1em; }
+    .markdown-preview a { color: #2563eb; text-decoration: underline; text-underline-offset: 2px; }
+    .markdown-preview code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace; font-size: 0.875em; padding: 0.2em 0.4em; border-radius: 4px; background: #f1f5f9; color: #0f172a; }
+    .markdown-preview pre { padding: 1em; border-radius: 8px; overflow-x: auto; background: #f6f8fa !important; margin-bottom: 1em; border: 1px solid #e5e7eb; }
+    .markdown-preview pre code { padding: 0; background: transparent !important; font-size: 0.85em; line-height: 1.6; color: #24292f; }
+    .markdown-preview pre code.hljs { background: transparent !important; padding: 0 !important; }
+    .markdown-preview blockquote { border-left: 4px solid rgba(37, 99, 235, 0.3); padding-left: 1em; margin: 1em 0; color: #64748b; }
+    .markdown-preview ul, .markdown-preview ol { padding-left: 1.5em; margin-bottom: 1em; }
+    .markdown-preview li { margin-bottom: 0.25em; }
+    .markdown-preview img { max-width: 100%; border-radius: 8px; margin: 1em 0; }
+    .markdown-preview table { width: 100%; border-collapse: collapse; margin-bottom: 1em; }
+    .markdown-preview th, .markdown-preview td { border: 1px solid #e5e7eb; padding: 0.5em 0.75em; text-align: left; }
+    .markdown-preview th { background: #f1f5f9; font-weight: 600; }
+    .markdown-preview hr { border: none; border-top: 1px solid #e5e7eb; margin: 2em 0; }
+    .markdown-preview input[type="checkbox"] { margin-right: 0.5em; }
+    .markdown-preview .katex-display { overflow-x: auto; overflow-y: hidden; padding: 0.5em 0; }
+
     @media (prefers-color-scheme: dark) {
-      body { background: #0d1117; }
-      .markdown-body { background: #0d1117; color: #c9d1d9; }
-      .markdown-body h1, .markdown-body h2 { border-color: #30363d; }
-      .markdown-body blockquote { color: #8b949e; border-color: #3b434b; }
-      .markdown-body code { background: #161b22; color: #c9d1d9; }
-      .markdown-body pre { background: #161b22 !important; border-color: #30363d; }
-      .markdown-body pre code { color: #e6edf3; background: transparent !important; }
-      .markdown-body pre code.hljs { background: transparent !important; color: #e6edf3; }
-      .markdown-body table tr { background: #0d1117; }
-      .markdown-body table td, .markdown-body table th { border-color: #30363d; }
-      .markdown-body table tr:nth-child(2n) { background: #161b22; }
-      .markdown-body hr { border-color: #30363d; }
-      .markdown-body a { color: #58a6ff; }
+      body { background: #0f0f14; color: #e4e4e7; }
+      .container { background: #1a1a24; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+      .markdown-preview { color: #e4e4e7; }
+      .markdown-preview h1, .markdown-preview h2 { border-color: #27272a; }
+      .markdown-preview a { color: #60a5fa; }
+      .markdown-preview pre { background: #161b22 !important; border-color: #30363d; }
+      .markdown-preview pre code { color: #e6edf3; }
+      .markdown-preview pre code.hljs { color: #e6edf3; }
+      .markdown-preview code { background: #27272a; color: #f4f4f5; }
+      .markdown-preview blockquote { border-left-color: rgba(96, 165, 250, 0.3); color: #a1a1aa; }
+      .markdown-preview th, .markdown-preview td { border-color: #27272a; }
+      .markdown-preview th { background: #27272a; }
+      .markdown-preview hr { border-color: #27272a; }
+
+      .markdown-preview .hljs-keyword { color: #ff7b72; }
+      .markdown-preview .hljs-string { color: #a5d6ff; }
+      .markdown-preview .hljs-comment { color: #8b949e; }
+      .markdown-preview .hljs-number { color: #79c0ff; }
+      .markdown-preview .hljs-function { color: #d2a8ff; }
+      .markdown-preview .hljs-title { color: #d2a8ff; }
+      .markdown-preview .hljs-built_in { color: #ffa657; }
+      .markdown-preview .hljs-type { color: #ff7b72; }
+      .markdown-preview .hljs-literal { color: #79c0ff; }
+      .markdown-preview .hljs-meta { color: #8b949e; }
+      .markdown-preview .hljs-attr { color: #79c0ff; }
+      .markdown-preview .hljs-selector-class { color: #7ee787; }
+      .markdown-preview .hljs-selector-id { color: #7ee787; }
+      .markdown-preview .hljs-variable { color: #ffa657; }
+      .markdown-preview .hljs-template-variable { color: #ffa657; }
+      .markdown-preview .hljs-regexp { color: #a5d6ff; }
+      .markdown-preview .hljs-symbol { color: #79c0ff; }
+      .markdown-preview .hljs-bullet { color: #79c0ff; }
+      .markdown-preview .hljs-section { color: #d2a8ff; }
+      .markdown-preview .hljs-link { color: #a5d6ff; }
+      .markdown-preview .hljs-tag { color: #7ee787; }
+      .markdown-preview .hljs-name { color: #ff7b72; }
+      .markdown-preview .hljs-params { color: #c9d1d9; }
+      .markdown-preview .hljs-property { color: #79c0ff; }
+      .markdown-preview .hljs-operator { color: #c9d1d9; }
+      .markdown-preview .hljs-punctuation { color: #c9d1d9; }
+      .markdown-preview .hljs-subst { color: #c9d1d9; }
     }
-    @media (prefers-color-scheme: light) {
-      body { background: #f6f8fa; }
-      .markdown-body { background: #fff; }
-      .markdown-body pre { background: #f6f8fa !important; border: 1px solid #d0d7de; border-radius: 8px; }
-      .markdown-body pre code { color: #24292f; background: transparent !important; }
-      .markdown-body pre code.hljs { background: transparent !important; color: #24292f; }
-      .markdown-body code { background: #eff1f3; color: #24292f; }
-    }
-    .markdown-body { max-width: 900px; margin: 40px auto; padding: 32px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.12); line-height: 1.75; }
-    .markdown-body img { max-width: 100%; border-radius: 8px; }
-    .markdown-body code { font-family: 'SF Mono', 'Fira Code', Consolas, 'Liberation Mono', Menlo, monospace; font-size: 0.875em; }
-    .markdown-body pre { padding: 1em; border-radius: 8px; overflow-x: auto; margin-bottom: 1em; }
-    .markdown-body pre code { padding: 0; font-size: 0.85em; line-height: 1.6; background: transparent !important; }
-    .markdown-body pre code.hljs { padding: 0 !important; background: transparent !important; }
-    .markdown-body .katex-display { overflow-x: auto; overflow-y: hidden; }
   </style>
 </head>
 <body>
-  <div class="markdown-body">
-    ${htmlContent}
+  <div class="container">
+    <div class="markdown-preview">
+      ${htmlContent}
+    </div>
   </div>
-  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/typescript.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/shell.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/css.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/json.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/yaml.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/java.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/go.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/rust.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/c.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/cpp.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/csharp.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/php.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/ruby.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/swift.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/kotlin.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/dockerfile.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/nginx.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/diff.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/markdown.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/ini.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/toml.min.js"></script>
   <script>
-    // Apply highlight.js to all code blocks
-    // highlightAll() finds all <pre><code> and highlights them
-    hljs.highlightAll();
-
-    // Fallback: manually highlight any <pre><code> that wasn't picked up
-    document.querySelectorAll('pre code:not(.hljs)').forEach(function(el) {
-      hljs.highlightElement(el);
-    });
-
     // Simple theme toggle for published pages
     (function() {
       var saved = localStorage.getItem('mf-theme');
       if (saved === 'dark') {
-        document.body.style.background = '#0d1117';
-        var md = document.querySelector('.markdown-body');
-        if (md) { md.style.background = '#0d1117'; md.style.color = '#c9d1d9'; }
+        document.body.style.background = '#0f0f14';
+        document.querySelector('.container').style.background = '#1a1a24';
+        document.querySelector('.container').style.boxShadow = '0 1px 3px rgba(0,0,0,0.3)';
       }
     })();
   </script>
