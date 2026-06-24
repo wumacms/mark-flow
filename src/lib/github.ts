@@ -341,8 +341,8 @@ export function generateHtmlFromMarkdown(title: string, htmlContent: string): st
       overflow-x: auto;
     }
     .mermaid svg {
-      max-width: 100% !important;
-      height: auto !important;
+      max-width: 100%;
+      height: auto;
     }
 
     @media (prefers-color-scheme: dark) {
