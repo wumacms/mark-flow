@@ -23,7 +23,7 @@ import {
   createFolder,
   deleteFolder,
 } from '@/lib/db'
-import { getFile, createOrUpdateFile, getPagesInfo, generateHtmlFromMarkdown, generateBlogIndexHtml, type BlogArticle } from '@/lib/github'
+import { saveFileWithConflictRetry, getPagesInfo, generateHtmlFromMarkdown, generateBlogIndexHtml, type BlogArticle } from '@/lib/github'
 import { toast } from 'sonner'
 import type { Document } from '@/types'
 import { Toaster } from '@/components/ui/sonner'
@@ -177,6 +177,38 @@ export default function EditorPage() {
     setActiveDocument(doc)
   }
 
+  // Core save logic — throws on error so callers can handle appropriately
+  const saveToGitHub = async () => {
+    const slug = slugify(editorTitle || activeDocument!.title)
+    const updated = await updateDocument(activeDocument!.id, {
+      title: editorTitle || activeDocument!.title,
+      content: editorContent,
+      slug,
+    })
+
+    // Save to GitHub with automatic SHA conflict retry
+    const docPath = activeDocument!.folder_path
+      ? `${activeDocument!.folder_path}/${slug}/index.md`
+      : `${slug}/index.md`
+
+    await saveFileWithConflictRetry(
+      user!.github_token!,
+      user!.github_username!,
+      user!.repo_name!,
+      docPath,
+      editorContent,
+      `docs: update ${slug}`
+    )
+
+    if (updated) {
+      setActiveDocument(updated)
+      const docs = await getDocuments(user!.id)
+      setDocuments(docs)
+    }
+
+    setHasUnsavedChanges(false)
+  }
+
   const handleSave = async () => {
     if (!activeDocument || !user?.github_token || !user?.github_username || !user?.repo_name) {
       toast.error('无法保存：缺少必要信息')
@@ -185,42 +217,7 @@ export default function EditorPage() {
 
     setIsSaving(true)
     try {
-      const slug = slugify(editorTitle || activeDocument.title)
-      const updated = await updateDocument(activeDocument.id, {
-        title: editorTitle || activeDocument.title,
-        content: editorContent,
-        slug,
-      })
-
-      // Save to GitHub
-      const docPath = activeDocument.folder_path
-        ? `${activeDocument.folder_path}/${slug}/index.md`
-        : `${slug}/index.md`
-
-      const existingFile = await getFile(
-        user.github_token,
-        user.github_username,
-        user.repo_name,
-        docPath
-      )
-
-      await createOrUpdateFile(
-        user.github_token,
-        user.github_username,
-        user.repo_name,
-        docPath,
-        editorContent,
-        `docs: update ${slug}`,
-        existingFile?.sha
-      )
-
-      if (updated) {
-        setActiveDocument(updated)
-        const docs = await getDocuments(user.id)
-        setDocuments(docs)
-      }
-
-      setHasUnsavedChanges(false)
+      await saveToGitHub()
       toast.success('文档已保存到 GitHub')
     } catch (err: any) {
       toast.error('保存失败: ' + err.message)
@@ -237,7 +234,8 @@ export default function EditorPage() {
 
     setIsPublishing(true)
     try {
-      await handleSave()
+      // Save markdown to main branch — errors will abort the publish
+      await saveToGitHub()
 
       const slug = slugify(editorTitle || activeDocument.title)
       const docDir = activeDocument.folder_path
@@ -247,22 +245,14 @@ export default function EditorPage() {
       const htmlContent = renderMarkdownToHtml(editorContent)
       const fullHtml = generateHtmlFromMarkdown(editorTitle || activeDocument.title, htmlContent)
 
-      const existingHtml = await getFile(
-        user.github_token,
-        user.github_username,
-        user.repo_name,
-        `${docDir}/index.html`,
-        'gh-pages'
-      )
-
-      await createOrUpdateFile(
+      // Publish HTML to gh-pages with automatic SHA conflict retry
+      await saveFileWithConflictRetry(
         user.github_token,
         user.github_username,
         user.repo_name,
         `${docDir}/index.html`,
         fullHtml,
         `publish: ${slug}`,
-        existingHtml?.sha,
         'gh-pages'
       )
 
@@ -307,22 +297,15 @@ export default function EditorPage() {
       })
 
       const blogIndexHtml = generateBlogIndexHtml(blogArticles, user.repo_name)
-      const existingIndex = await getFile(
-        user.github_token,
-        user.github_username,
-        user.repo_name,
-        'index.html',
-        'gh-pages'
-      )
 
-      await createOrUpdateFile(
+      // Update blog index on gh-pages with automatic SHA conflict retry
+      await saveFileWithConflictRetry(
         user.github_token,
         user.github_username,
         user.repo_name,
         'index.html',
         blogIndexHtml,
         'publish: update blog index',
-        existingIndex?.sha,
         'gh-pages'
       )
 
@@ -364,7 +347,7 @@ export default function EditorPage() {
     const element = (
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
-        rehypePlugins={[rehypeRaw, rehypeHighlight, rehypeKatex]}
+        rehypePlugins={[rehypeRaw, [rehypeHighlight, { aliases: { vue: 'xml', svelte: 'xml' } }], rehypeKatex]}
       >
         {md}
       </ReactMarkdown>

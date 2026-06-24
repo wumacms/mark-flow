@@ -336,10 +336,10 @@ export function MarkdownEditor({
               editorMode === 'preview' ? 'w-full' : 'w-1/2'
             )}
           >
-            <div className="markdown-preview prose prose-sm dark:prose-invert max-w-none">
+            <div className="markdown-body max-w-none">
               <ReactMarkdown
                 remarkPlugins={[remarkGfm, remarkMath]}
-                rehypePlugins={[rehypeRaw, rehypeHighlight, rehypeKatex]}
+                rehypePlugins={[rehypeRaw, [rehypeHighlight, { aliases: { vue: 'xml', svelte: 'xml' } }], rehypeKatex]}
               >
                 {value || '*暂无内容，开始编写吧...*'}
               </ReactMarkdown>

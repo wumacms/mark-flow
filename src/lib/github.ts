@@ -109,12 +109,20 @@ export async function getFile(
   branch: string = 'main'
 ): Promise<{ content: string; sha: string } | null> {
   try {
+    const cleanPath = path.replace(/^\/+/, '')
     const result = await githubRequest(
       token,
-      `/repos/${owner}/${repo}/contents/${path}?ref=${branch}`
+      `/repos/${owner}/${repo}/contents/${cleanPath}?ref=${branch}`
     )
-    // Content is base64 encoded
-    const content = atob(result.content.replace(/\n/g, ''))
+    // Content is base64 encoded; decode gracefully so SHA is always returned
+    let content = ''
+    if (result.content) {
+      try {
+        content = atob(result.content.replace(/\n/g, ''))
+      } catch {
+        // Content decode failed but SHA is still valid
+      }
+    }
     return { content, sha: result.sha }
   } catch {
     return null
@@ -156,6 +164,7 @@ export async function createOrUpdateFile(
   sha?: string,
   branch: string = 'main'
 ) {
+  const cleanPath = path.replace(/^\/+/, '')
   const body: Record<string, string> = {
     message,
     content: btoa(unescape(encodeURIComponent(content))),
@@ -164,7 +173,61 @@ export async function createOrUpdateFile(
   if (sha) {
     body.sha = sha
   }
-  return githubRequest(token, `/repos/${owner}/${repo}/contents/${path}`, 'PUT', body)
+  return githubRequest(token, `/repos/${owner}/${repo}/contents/${cleanPath}`, 'PUT', body)
+}
+
+/**
+ * Save a file to GitHub with automatic 409 conflict resolution.
+ *
+ * Strategy:
+ * 1. Fetch the current file SHA via getFile.
+ * 2. Attempt the PUT.
+ * 3. On 409, extract the correct SHA directly from GitHub's error
+ *    response ("<path> does not match <sha>") — this is more reliable
+ *    than re-calling getFile which may fail due to API eventual
+ *    consistency right after a recent commit to the same branch.
+ */
+export async function saveFileWithConflictRetry(
+  token: string,
+  owner: string,
+  repo: string,
+  path: string,
+  content: string,
+  message: string,
+  branch: string = 'main',
+  maxRetries: number = 3
+) {
+  // Initial SHA fetch
+  const existing = await getFile(token, owner, repo, path, branch)
+  let sha: string | undefined = existing?.sha
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await createOrUpdateFile(
+        token, owner, repo, path, content, message,
+        sha, branch
+      )
+    } catch (err: any) {
+      const is409 = err.message?.includes('409')
+      if (is409 && attempt < maxRetries) {
+        // Extract the correct SHA from GitHub's error message:
+        // "<path> does not match <40-char hex sha>"
+        const shaMatch = err.message.match(/does not match ([0-9a-f]{40})/)
+        if (shaMatch) {
+          sha = shaMatch[1]
+          console.warn(`SHA conflict on "${path}", extracted correct SHA ${sha}, retrying (${attempt + 1}/${maxRetries})...`)
+        } else {
+          // Fallback: re-fetch from API with a small delay
+          await new Promise(r => setTimeout(r, 1000))
+          const freshFile = await getFile(token, owner, repo, path, branch)
+          sha = freshFile?.sha
+          console.warn(`SHA conflict on "${path}", re-fetched SHA, retrying (${attempt + 1}/${maxRetries})...`)
+        }
+        continue
+      }
+      throw err
+    }
+  }
 }
 
 export async function getDirectoryContents(
@@ -175,9 +238,10 @@ export async function getDirectoryContents(
   branch: string = 'main'
 ): Promise<Array<{ name: string; path: string; type: string; sha: string }>> {
   try {
+    const cleanPath = path.replace(/^\/+/, '')
     const result = await githubRequest(
       token,
-      `/repos/${owner}/${repo}/contents/${path}?ref=${branch}`
+      `/repos/${owner}/${repo}/contents/${cleanPath}?ref=${branch}`
     )
     return Array.isArray(result) ? result : []
   } catch {
@@ -194,7 +258,8 @@ export async function deleteFile(
   message: string,
   branch: string = 'main'
 ) {
-  return githubRequest(token, `/repos/${owner}/${repo}/contents/${path}`, 'DELETE', {
+  const cleanPath = path.replace(/^\/+/, '')
+  return githubRequest(token, `/repos/${owner}/${repo}/contents/${cleanPath}`, 'DELETE', {
     message,
     sha,
     branch,

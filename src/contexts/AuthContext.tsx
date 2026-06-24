@@ -159,8 +159,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         setSession(s)
         if (s) {
-          const fallback = buildFallbackUser(s)
-          setUser(fallback)
+          setUser((prevUser) => {
+            if (prevUser && prevUser.id === s.user.id) {
+              return prevUser;
+            }
+            return buildFallbackUser(s);
+          });
           setAuthError(null)
 
           // Defer the DB query to prevent deadlocking Supabase's internal lock
@@ -193,9 +197,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (cancelled) return
         setSession(s)
         if (s) {
-          // Set fallback user immediately
-          const fallback = buildFallbackUser(s)
-          setUser(fallback)
+          // Set fallback user immediately if needed
+          setUser((prevUser) => {
+            if (prevUser && prevUser.id === s.user.id) {
+              return prevUser;
+            }
+            return buildFallbackUser(s);
+          });
           setAuthError(null)
 
           // Load full profile from database

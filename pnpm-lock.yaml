@@ -116,6 +116,9 @@ importers:
       embla-carousel-react:
         specifier: ^8.6.0
         version: 8.6.0(react@18.3.1)
+      github-markdown-css:
+        specifier: ^5.9.0
+        version: 5.9.0
       highlight.js:
         specifier: ^11.10.0
         version: 11.11.1
@@ -234,6 +237,9 @@ importers:
       jsdom:
         specifier: ^20.0.3
         version: 20.0.3
+      monaco-editor:
+        specifier: ^0.55.1
+        version: 0.55.1
       tailwindcss:
         specifier: ^4.2.1
         version: 4.3.1
@@ -2716,6 +2722,10 @@ packages:
 
   get-stream@6.0.1:
     resolution: {integrity: sha512-ts6Wi+2j3jQjqi70w5AlN8DFnkSwC+MqmxEzdEALB2qXZYV3X/b1CTfgPLGJNMeAWxdPfU8FO1ms3NUfaHCPYg==}
+    engines: {node: '>=10'}
+
+  github-markdown-css@5.9.0:
+    resolution: {integrity: sha512-tmT5sY+zvg2302XLYEfH2mtkViIM1SWf2nvYoF5N1ZsO0V6B2qZTiw3GOzw4vpjLygK/KG35qRlPFweHqfzz5w==}
     engines: {node: '>=10'}
 
   glob-parent@5.1.2:
@@ -7109,6 +7119,8 @@ snapshots:
       es-object-atoms: 1.1.2
 
   get-stream@6.0.1: {}
+
+  github-markdown-css@5.9.0: {}
 
   glob-parent@5.1.2:
     dependencies:
