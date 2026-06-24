@@ -5,6 +5,9 @@ import remarkMath from 'remark-math'
 import rehypeRaw from 'rehype-raw'
 import rehypeHighlight from 'rehype-highlight'
 import rehypeKatex from 'rehype-katex'
+import Editor, { type OnMount } from '@monaco-editor/react'
+import type * as MonacoTypes from 'monaco-editor'
+import { useTheme } from '@/hooks/useTheme'
 import {
   Bold,
   Italic,
@@ -93,30 +96,76 @@ export function MarkdownEditor({
   title,
   onTitleChange,
 }: MarkdownEditorProps) {
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const editorRef = useRef<MonacoTypes.editor.IStandaloneCodeEditor | null>(null)
   const previewRef = useRef<HTMLDivElement>(null)
+  const { isDark } = useTheme()
+
+  // Store onSave in a ref so the Monaco keybinding always sees the latest callback
+  const onSaveRef = useRef(onSave)
+  useEffect(() => {
+    onSaveRef.current = onSave
+  }, [onSave])
+
+  const handleEditorDidMount: OnMount = (editor, monaco) => {
+    editorRef.current = editor
+
+    // Bind Ctrl+S / Cmd+S to save
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
+      onSaveRef.current()
+    })
+
+    // Scroll sync: editor → preview
+    editor.onDidScrollChange(() => {
+      const preview = previewRef.current
+      if (!preview) return
+      const scrollTop = editor.getScrollTop()
+      const scrollHeight = editor.getScrollHeight()
+      const editorHeight = editor.getLayoutInfo().height
+      const ratio = scrollTop / (scrollHeight - editorHeight || 1)
+      preview.scrollTop = ratio * (preview.scrollHeight - preview.clientHeight)
+    })
+  }
 
   const insertText = useCallback((before: string, after: string = '', placeholder: string = '') => {
-    const textarea = textareaRef.current
-    if (!textarea) return
+    const editor = editorRef.current
+    if (!editor) return
 
-    const start = textarea.selectionStart
-    const end = textarea.selectionEnd
-    const selectedText = value.substring(start, end)
+    const model = editor.getModel()
+    const selection = editor.getSelection()
+    if (!model || !selection) return
+
+    const selectedText = model.getValueInRange(selection)
     const insertion = before + (selectedText || placeholder) + after
 
-    const newValue = value.substring(0, start) + insertion + value.substring(end)
-    onChange(newValue)
+    // Execute the edit
+    editor.executeEdits('toolbar', [
+      {
+        range: selection,
+        text: insertion,
+        forceMoveMarkers: true,
+      },
+    ])
 
-    setTimeout(() => {
-      textarea.focus()
-      const newCursorPos = start + before.length + (selectedText ? selectedText.length : placeholder.length)
-      textarea.setSelectionRange(
-        start + before.length,
-        selectedText ? newCursorPos : start + before.length + placeholder.length
-      )
-    }, 0)
-  }, [value, onChange])
+    // Set the new selection to highlight the inserted placeholder/text
+    const startLine = selection.startLineNumber
+    const startCol = selection.startColumn + before.length
+    const textToSelect = selectedText || placeholder
+    // Calculate end position accounting for possible newlines in the inserted text
+    const lines = (before + textToSelect).split('\n')
+    const endLine = selection.startLineNumber + lines.length - 1
+    const endCol = lines.length > 1
+      ? lines[lines.length - 1].length + 1
+      : startCol + textToSelect.length
+
+    editor.setSelection({
+      startLineNumber: startLine,
+      startColumn: startCol,
+      endLineNumber: endLine,
+      endColumn: endCol,
+    })
+
+    editor.focus()
+  }, [])
 
   const toolbarActions = [
     { icon: <Bold className="h-4 w-4" />, label: '粗体', action: () => insertText('**', '**', '粗体文本') },
@@ -135,20 +184,34 @@ export function MarkdownEditor({
     { icon: <Minus className="h-4 w-4" />, label: '分割线', action: () => insertText('\n---\n') },
   ]
 
-  // Sync scroll between editor and preview
-  useEffect(() => {
-    const textarea = textareaRef.current
-    const preview = previewRef.current
-    if (!textarea || !preview) return
-
-    const handleScroll = () => {
-      const ratio = textarea.scrollTop / (textarea.scrollHeight - textarea.clientHeight || 1)
-      preview.scrollTop = ratio * (preview.scrollHeight - preview.clientHeight)
-    }
-
-    textarea.addEventListener('scroll', handleScroll)
-    return () => textarea.removeEventListener('scroll', handleScroll)
-  }, [])
+  const monacoOptions: MonacoTypes.editor.IStandaloneEditorConstructionOptions = {
+    lineNumbers: 'on',
+    minimap: { enabled: false },
+    wordWrap: 'on',
+    fontSize: 14,
+    fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', Menlo, Monaco, 'Courier New', monospace",
+    lineHeight: 22,
+    padding: { top: 16, bottom: 16 },
+    scrollBeyondLastLine: false,
+    renderLineHighlight: 'line',
+    cursorBlinking: 'smooth',
+    cursorSmoothCaretAnimation: 'on',
+    smoothScrolling: true,
+    tabSize: 2,
+    automaticLayout: true,
+    overviewRulerLanes: 0,
+    hideCursorInOverviewRuler: true,
+    overviewRulerBorder: false,
+    scrollbar: {
+      verticalScrollbarSize: 8,
+      horizontalScrollbarSize: 8,
+      useShadows: false,
+    },
+    bracketPairColorization: { enabled: true },
+    guides: {
+      indentation: false,
+    },
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -238,7 +301,7 @@ export function MarkdownEditor({
 
       {/* Editor + Preview area */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Editor */}
+        {/* Monaco Editor */}
         {editorMode !== 'preview' && (
           <div
             className={cn(
@@ -247,13 +310,19 @@ export function MarkdownEditor({
               editorMode === 'split' && 'border-r border-border'
             )}
           >
-            <textarea
-              ref={textareaRef}
+            <Editor
+              height="100%"
+              language="markdown"
+              theme={isDark ? 'vs-dark' : 'vs'}
               value={value}
-              onChange={e => onChange(e.target.value)}
-              placeholder="开始编写 Markdown..."
-              className="flex-1 w-full p-4 resize-none outline-none bg-background font-mono text-sm leading-relaxed"
-              spellCheck={false}
+              onChange={(v) => onChange(v ?? '')}
+              onMount={handleEditorDidMount}
+              options={monacoOptions}
+              loading={
+                <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+                  编辑器加载中...
+                </div>
+              }
             />
           </div>
         )}
