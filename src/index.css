@@ -142,7 +142,6 @@
 }
 
 /* Markdown preview styles */
-@layer components {
   /* Override default github-markdown variables and font family for light theme */
   .markdown-body {
     color-scheme: light;
@@ -358,4 +357,15 @@
   .dark .markdown-body .hljs-strong { color: #c9d1d9; font-weight: 700; }
   .dark .markdown-body .hljs-addition { color: #aff5b4; background-color: #033a16; }
   .dark .markdown-body .hljs-deletion { color: #ffdcd7; background-color: #67060c; }
-}
+
+  /* Mermaid SVG styles */
+  .mermaid-container {
+    max-width: 800px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .mermaid-container svg {
+    max-width: 100%;
+    height: auto;
+  }
+

@@ -5,6 +5,7 @@ import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import rehypeRaw from 'rehype-raw'
 import rehypeHighlight from 'rehype-highlight'
+import { highlightOptions } from '@/lib/highlight'
 import rehypeKatex from 'rehype-katex'
 import { useAuth } from '@/contexts/AuthContext'
 import { useApp } from '@/contexts/AppContext'
@@ -347,7 +348,7 @@ export default function EditorPage() {
     const element = (
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
-        rehypePlugins={[rehypeRaw, [rehypeHighlight, { aliases: { vue: 'xml', svelte: 'xml' } }], rehypeKatex]}
+        rehypePlugins={[rehypeRaw, [rehypeHighlight, highlightOptions], rehypeKatex]}
       >
         {md}
       </ReactMarkdown>

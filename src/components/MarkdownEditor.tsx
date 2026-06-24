@@ -4,10 +4,12 @@ import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import rehypeRaw from 'rehype-raw'
 import rehypeHighlight from 'rehype-highlight'
+import { highlightOptions } from '@/lib/highlight'
 import rehypeKatex from 'rehype-katex'
 import Editor, { type OnMount } from '@monaco-editor/react'
 import type * as MonacoTypes from 'monaco-editor'
 import { useTheme } from '@/hooks/useTheme'
+import { Mermaid } from './Mermaid'
 import {
   Bold,
   Italic,
@@ -82,6 +84,15 @@ function ToolbarButton({ icon, label, onClick, active }: ToolbarButtonProps) {
   )
 }
 
+const getRawText = (node: any): string => {
+  if (!node) return ''
+  if (typeof node === 'string') return node
+  if (typeof node === 'number') return String(node)
+  if (Array.isArray(node)) return node.map(getRawText).join('')
+  if (node.props && node.props.children) return getRawText(node.props.children)
+  return ''
+}
+
 export function MarkdownEditor({
   value,
   onChange,
@@ -124,6 +135,65 @@ export function MarkdownEditor({
       const ratio = scrollTop / (scrollHeight - editorHeight || 1)
       preview.scrollTop = ratio * (preview.scrollHeight - preview.clientHeight)
     })
+
+    // Register embedded code block highlighting in Monaco (bash -> shell, vue/svelte -> html)
+    interface MonacoLanguageExtension {
+      id: string;
+      loader?: () => Promise<{ language: Record<string, unknown> }>;
+    }
+    const allLangs = monaco.languages.getLanguages() as MonacoLanguageExtension[];
+    
+    const registerWithFallback = (targetId: string, sourceId: string) => {
+      const targetExists = allLangs.some(lang => lang.id === targetId);
+      if (targetExists) return;
+
+      const sourceLang = allLangs.find(lang => lang.id === sourceId);
+      if (sourceLang) {
+        monaco.languages.register({ id: targetId });
+        if (sourceLang.loader) {
+          sourceLang.loader().then(loaded => {
+            if (loaded && loaded.language) {
+              monaco.languages.setMonarchTokensProvider(targetId, loaded.language);
+            }
+          }).catch(() => {});
+        }
+      }
+    };
+
+    registerWithFallback('bash', 'shell');
+    registerWithFallback('vue', 'html');
+    registerWithFallback('svelte', 'html');
+
+    // Monaco's built-in JSON language doesn't register a Monarch tokens provider (it uses a programmatic tokenizer),
+    // which prevents the Monarch-based Markdown tokenizer from highlighting nested JSON blocks.
+    // Registering a simple Monarch tokenizer for 'json' enables inline syntax highlighting.
+    monaco.languages.setMonarchTokensProvider('json', {
+      tokenizer: {
+        root: [
+          // Keys
+          [/"([^"\\]|\\.)*"(?=\s*:)/, 'keyword'],
+          // Values (Strings)
+          [/"([^"\\]|\\.)*"/, 'string'],
+          // Numbers
+          [/-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/, 'number'],
+          // Booleans and Null
+          [/\b(?:true|false|null)\b/, 'keyword'],
+          // Brackets & delimiters
+          [/[{} [\]]/, 'delimiter'],
+          [/[ : ,]/, 'delimiter'],
+        ]
+      }
+    });
+
+    // Pre-load common built-in language tokenizers (like json, javascript, typescript, css, python, sql, yaml)
+    // so they highlight inside markdown code blocks without needing to open a file of that type first.
+    const languagesToPreload = ['json', 'javascript', 'typescript', 'css', 'python', 'sql', 'yaml'];
+    languagesToPreload.forEach(id => {
+      const lang = allLangs.find(l => l.id === id);
+      if (lang && lang.loader) {
+        lang.loader().catch(() => {});
+      }
+    });
   }
 
   const insertText = useCallback((before: string, after: string = '', placeholder: string = '') => {
@@ -339,7 +409,20 @@ export function MarkdownEditor({
             <div className="markdown-body max-w-none">
               <ReactMarkdown
                 remarkPlugins={[remarkGfm, remarkMath]}
-                rehypePlugins={[rehypeRaw, [rehypeHighlight, { aliases: { vue: 'xml', svelte: 'xml' } }], rehypeKatex]}
+                rehypePlugins={[rehypeRaw, [rehypeHighlight, highlightOptions], rehypeKatex]}
+                components={{
+                  code({ node, className, children, ...props }) {
+                    const match = /language-(\w+)/.exec(className || '')
+                    if (match && match[1] === 'mermaid') {
+                      return <Mermaid chart={getRawText(children)} isDark={isDark} />
+                    }
+                    return (
+                      <code className={className} {...props}>
+                        {children}
+                      </code>
+                    )
+                  }
+                }}
               >
                 {value || '*暂无内容，开始编写吧...*'}
               </ReactMarkdown>
